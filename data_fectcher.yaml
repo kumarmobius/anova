@@ -1,4 +1,4 @@
-name: Data Fetcher from schema 
+name: Data Fetcher from schema v1
 inputs:
   - {name: bearer_token, type: string, description: "Path to file containing bearer token"}
   - {name: domain, type: String, description: "Base domain, e.g. https://igs.gov-cloud.ai"}
@@ -54,7 +54,7 @@ implementation:
         filter_obj = {"projectId": args.project_id}
         
         if args.model_id and args.model_id.strip():
-            filter_obj["modelId"] = args.model_id.strip()
+            filter_obj["model_id"] = args.model_id.strip()
             print(f"[INFO] Filtering by projectId: {args.project_id} and modelId: {args.model_id}")
         else:
             print(f"[INFO] Filtering by projectId: {args.project_id}")
