@@ -1,9 +1,10 @@
-name: Schema Filter by Project v1
+name: Data Fetcher from schema 
 inputs:
   - {name: bearer_token, type: string, description: "Path to file containing bearer token"}
   - {name: domain, type: String, description: "Base domain, e.g. https://igs.gov-cloud.ai"}
   - {name: schema_id, type: String, description: "Schema ID for the entity instances"}
   - {name: project_id, type: String, description: "Project ID to filter schemas"}
+  - {name: model_id, type: String, description: "Model ID to filter schemas (optional, if empty no model filter applied)", default: ""}
   - {name: attributes_to_be_pick, type: String, description: "Comma-separated list of attributes to include (optional, if empty picks all)", default: ""}
 
 outputs:
@@ -28,6 +29,7 @@ implementation:
         parser.add_argument('--domain', required=True)
         parser.add_argument('--schema_id', required=True)
         parser.add_argument('--project_id', required=True)
+        parser.add_argument('--model_id', default="")
         parser.add_argument('--attributes_to_be_pick', default="")
         parser.add_argument('--schema_output', required=True)
         args = parser.parse_args()
@@ -48,10 +50,14 @@ implementation:
         else:
             print("[INFO] No attribute filter specified - including all attributes")
 
-        # Build filter with project_id
+        # Build filter with project_id and optionally model_id
         filter_obj = {"projectId": args.project_id}
         
-        print(f"[INFO] Filtering by projectId: {args.project_id}")
+        if args.model_id and args.model_id.strip():
+            filter_obj["modelId"] = args.model_id.strip()
+            print(f"[INFO] Filtering by projectId: {args.project_id} and modelId: {args.model_id}")
+        else:
+            print(f"[INFO] Filtering by projectId: {args.project_id}")
 
         # Construct URL
         url = (
@@ -128,6 +134,7 @@ implementation:
             # Prepare output JSON with filtered schemas
             output_data = {
                 "project_id": args.project_id,
+                "model_id": args.model_id if args.model_id else None,
                 "schema_id": args.schema_id,
                 "total_count": len(filtered_instances),
                 "attributes_included": attributes_list if attributes_list else "all",
@@ -143,6 +150,8 @@ implementation:
             # Print success
             print("[SUCCESS] Schemas filtered successfully:")
             print(f"  - Project ID: {args.project_id}")
+            if args.model_id:
+                print(f"  - Model ID: {args.model_id}")
             print(f"  - Total schemas found: {len(filtered_instances)}")
             if attributes_list:
                 print(f"  - Attributes included: {', '.join(attributes_list)}")
@@ -168,6 +177,8 @@ implementation:
       - {inputValue: schema_id}
       - --project_id
       - {inputValue: project_id}
+      - --model_id
+      - {inputValue: model_id}
       - --attributes_to_be_pick
       - {inputValue: attributes_to_be_pick}
       - --schema_output
