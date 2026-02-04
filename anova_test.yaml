@@ -1,4 +1,4 @@
-name: ANOVA Analysis from Schema CDN URLs v1
+name: ANOVA Analysis from Schema CDN URLs v2
 inputs:
   - {name: schema_json, type: String, description: "Path to schema JSON file containing CDN URLs"}
   - {name: bearer_token, type: string, description: "Path to file containing bearer token (if CDN URLs require auth)"}
@@ -225,7 +225,7 @@ implementation:
                             "num_groups": len(groups),
                             "f_statistic": float(f_statistic),
                             "p_value": float(p_value),
-                            "is_significant": p_value < alpha,
+                            "is_significant": bool(p_value < alpha),
                             "group_sizes": [len(g) for g in groups],
                             "group_means": [float(np.mean(g)) for g in groups],
                             "group_stds": [float(np.std(g)) for g in groups]
