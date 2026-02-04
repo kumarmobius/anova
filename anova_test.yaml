@@ -168,19 +168,9 @@ implementation:
         anova_results = {
             "total_datasets": len(downloaded_datasets),
             "significance_level": alpha,
-            "datasets_info": [],
             "anova_tests": []
         }
 
-        # Add dataset information
-        for ds in downloaded_datasets:
-            anova_results["datasets_info"].append({
-                "schema_id": ds["schema_id"],
-                "file_path": ds["file_path"],
-                "url": ds["url"],
-                "shape": list(ds["shape"]),
-                "columns": list(ds["dataframe"].columns)
-            })
 
         # Perform ANOVA on numeric columns across datasets
         # Find common numeric columns across all datasets
@@ -221,14 +211,11 @@ implementation:
                         
                         result = {
                             "column": column,
-                            "datasets_included": valid_datasets,
                             "num_groups": len(groups),
                             "f_statistic": float(f_statistic),
                             "p_value": float(p_value),
                             "is_significant": bool(p_value < alpha),
                             "group_sizes": [len(g) for g in groups],
-                            "group_means": [float(np.mean(g)) for g in groups],
-                            "group_stds": [float(np.std(g)) for g in groups]
                         }
                         
                         anova_results["anova_tests"].append(result)
@@ -243,12 +230,6 @@ implementation:
                 else:
                     print(f"[WARNING] Not enough groups for ANOVA on column '{column}'")
         
-        # Summary statistics
-        anova_results["summary"] = {
-            "total_tests_performed": len(anova_results["anova_tests"]),
-            "significant_results": sum(1 for test in anova_results["anova_tests"] if test["is_significant"]),
-            "non_significant_results": sum(1 for test in anova_results["anova_tests"] if not test["is_significant"])
-        }
 
         # Save results
         os.makedirs(os.path.dirname(args.anova_results), exist_ok=True)
