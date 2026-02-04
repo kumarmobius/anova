@@ -147,7 +147,6 @@ implementation:
             return input_path, None  # No temp file created
 
         def upload_file_to_cdn(file_path, output_json_path, output_key):
-            """Upload file to CDN and save result to JSON."""
             print(f"[DEBUG] Uploading {file_path} -> output {output_json_path} key '{output_key}'")
             
             resp = run_curl_upload(file_path)
