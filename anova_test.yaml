@@ -1,0 +1,279 @@
+name: ANOVA Analysis from Schema CDN URLs v1
+inputs:
+  - {name: schema_json, type: String, description: "Path to schema JSON file containing CDN URLs"}
+  - {name: bearer_token, type: string, description: "Path to file containing bearer token (if CDN URLs require auth)"}
+  - {name: cdn_url_field, type: String, description: "Field name in schema that contains CDN URL", default: "cdnUrl"}
+  - {name: significance_level, type: String, description: "Significance level for ANOVA test (alpha)", default: "0.05"}
+
+outputs:
+  - {name: anova_results, type: String, description: "JSON file with ANOVA test results"}
+  - {name: downloaded_data, type: String, description: "Directory containing downloaded datasets"}
+
+implementation:
+  container:
+    image: gurpreetgandhi/nesy-factory:vtest4
+    command:
+      - python3
+      - -u
+      - -c
+      - |
+        import argparse
+        import json
+        import os
+        import sys
+        import requests
+        import pandas as pd
+        import numpy as np
+        from scipy import stats
+        from pathlib import Path
+        import traceback
+
+        parser = argparse.ArgumentParser(description="Perform ANOVA test on datasets from CDN URLs")
+        parser.add_argument('--schema_json', required=True)
+        parser.add_argument('--bearer_token', required=True)
+        parser.add_argument('--cdn_url_field', default='cdnUrl')
+        parser.add_argument('--significance_level', default='0.05')
+        parser.add_argument('--anova_results', required=True)
+        parser.add_argument('--downloaded_data', required=True)
+        args = parser.parse_args()
+
+        # Read bearer token
+        token = None
+        try:
+            with open(args.bearer_token, "r", encoding="utf-8") as f:
+                token = f.read().strip()
+            print("[INFO] Bearer token loaded successfully")
+        except Exception as e:
+            print(f"[WARNING] Failed to read bearer token: {e}", file=sys.stderr)
+            print("[INFO] Proceeding without authentication")
+
+        # Parse significance level
+        try:
+            alpha = float(args.significance_level)
+            print(f"[INFO] Significance level (alpha): {alpha}")
+        except:
+            alpha = 0.05
+            print(f"[WARNING] Invalid significance level, using default: {alpha}")
+
+        # Load schema JSON
+        print(f"[INFO] Loading schema JSON from: {args.schema_json}")
+        try:
+            with open(args.schema_json, "r", encoding="utf-8") as f:
+                schema_data = json.load(f)
+            print("[INFO] Schema JSON loaded successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to load schema JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        # Extract CDN URLs from schema
+        cdn_urls = []
+        schemas = schema_data.get("schemas", [])
+        
+        if not schemas:
+            print("[ERROR] No schemas found in JSON", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"[INFO] Processing {len(schemas)} schema(s) to extract CDN URLs")
+        
+        for idx, schema in enumerate(schemas):
+            cdn_url = schema.get(args.cdn_url_field)
+            if cdn_url:
+                cdn_urls.append({
+                    "url": cdn_url,
+                    "schema_index": idx,
+                    "schema_id": schema.get("id", f"schema_{idx}")
+                })
+                print(f"[INFO] Found CDN URL in schema {idx}: {cdn_url}")
+            else:
+                print(f"[WARNING] No '{args.cdn_url_field}' field found in schema {idx}")
+
+        if not cdn_urls:
+            print(f"[ERROR] No CDN URLs found in field '{args.cdn_url_field}'", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"[INFO] Total CDN URLs found: {len(cdn_urls)}")
+
+        # Create output directory for downloaded data
+        os.makedirs(args.downloaded_data, exist_ok=True)
+
+        # Download datasets from CDN URLs
+        downloaded_datasets = []
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        for cdn_info in cdn_urls:
+            url = cdn_info["url"]
+            schema_id = cdn_info["schema_id"]
+            
+            print(f"[INFO] Downloading data from: {url}")
+            
+            try:
+                response = requests.get(url, headers=headers, timeout=120)
+                
+                if not response.ok:
+                    print(f"[WARNING] Failed to download from {url}: Status {response.status_code}", file=sys.stderr)
+                    continue
+                
+                # Save downloaded file
+                file_ext = ".csv"  # Default to CSV
+                if url.endswith('.json'):
+                    file_ext = ".json"
+                elif url.endswith('.xlsx') or url.endswith('.xls'):
+                    file_ext = ".xlsx"
+                
+                file_path = os.path.join(args.downloaded_data, f"dataset_{schema_id}{file_ext}")
+                
+                with open(file_path, "wb") as f:
+                    f.write(response.content)
+                
+                print(f"[INFO] Downloaded to: {file_path}")
+                
+                # Load data into DataFrame
+                df = None
+                try:
+                    if file_ext == ".csv":
+                        df = pd.read_csv(file_path)
+                    elif file_ext == ".json":
+                        df = pd.read_json(file_path)
+                    elif file_ext == ".xlsx":
+                        df = pd.read_excel(file_path)
+                    
+                    if df is not None:
+                        downloaded_datasets.append({
+                            "schema_id": schema_id,
+                            "file_path": file_path,
+                            "dataframe": df,
+                            "url": url,
+                            "shape": df.shape
+                        })
+                        print(f"[INFO] Loaded dataset with shape: {df.shape}")
+                    
+                except Exception as load_error:
+                    print(f"[WARNING] Failed to load data from {file_path}: {load_error}", file=sys.stderr)
+                    
+            except Exception as e:
+                print(f"[WARNING] Failed to download from {url}: {e}", file=sys.stderr)
+                continue
+
+        if not downloaded_datasets:
+            print("[ERROR] No datasets were successfully downloaded", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"[INFO] Successfully downloaded {len(downloaded_datasets)} dataset(s)")
+
+        # Perform ANOVA analysis
+        print("[INFO] Starting ANOVA analysis...")
+        
+        anova_results = {
+            "total_datasets": len(downloaded_datasets),
+            "significance_level": alpha,
+            "datasets_info": [],
+            "anova_tests": []
+        }
+
+        # Add dataset information
+        for ds in downloaded_datasets:
+            anova_results["datasets_info"].append({
+                "schema_id": ds["schema_id"],
+                "file_path": ds["file_path"],
+                "url": ds["url"],
+                "shape": list(ds["shape"]),
+                "columns": list(ds["dataframe"].columns)
+            })
+
+        # Perform ANOVA on numeric columns across datasets
+        # Find common numeric columns across all datasets
+        numeric_columns_sets = []
+        for ds in downloaded_datasets:
+            numeric_cols = ds["dataframe"].select_dtypes(include=[np.number]).columns.tolist()
+            numeric_columns_sets.append(set(numeric_cols))
+
+        if numeric_columns_sets:
+            common_numeric_columns = set.intersection(*numeric_columns_sets)
+            print(f"[INFO] Common numeric columns across datasets: {common_numeric_columns}")
+            
+            if not common_numeric_columns:
+                print("[WARNING] No common numeric columns found across datasets")
+                # Try each dataset's numeric columns separately
+                all_numeric_cols = set()
+                for cols in numeric_columns_sets:
+                    all_numeric_cols.update(cols)
+                common_numeric_columns = all_numeric_cols
+                print(f"[INFO] Using all available numeric columns: {common_numeric_columns}")
+
+            # Perform ANOVA for each numeric column
+            for column in common_numeric_columns:
+                groups = []
+                valid_datasets = []
+                
+                for ds in downloaded_datasets:
+                    if column in ds["dataframe"].columns:
+                        data = ds["dataframe"][column].dropna()
+                        if len(data) > 0:
+                            groups.append(data.values)
+                            valid_datasets.append(ds["schema_id"])
+                
+                if len(groups) >= 2:
+                    try:
+                        # Perform one-way ANOVA
+                        f_statistic, p_value = stats.f_oneway(*groups)
+                        
+                        result = {
+                            "column": column,
+                            "datasets_included": valid_datasets,
+                            "num_groups": len(groups),
+                            "f_statistic": float(f_statistic),
+                            "p_value": float(p_value),
+                            "is_significant": p_value < alpha,
+                            "group_sizes": [len(g) for g in groups],
+                            "group_means": [float(np.mean(g)) for g in groups],
+                            "group_stds": [float(np.std(g)) for g in groups]
+                        }
+                        
+                        anova_results["anova_tests"].append(result)
+                        
+                        print(f"[INFO] ANOVA for '{column}':")
+                        print(f"  F-statistic: {f_statistic:.4f}")
+                        print(f"  p-value: {p_value:.6f}")
+                        print(f"  Significant: {p_value < alpha}")
+                        
+                    except Exception as anova_error:
+                        print(f"[WARNING] ANOVA failed for column '{column}': {anova_error}", file=sys.stderr)
+                else:
+                    print(f"[WARNING] Not enough groups for ANOVA on column '{column}'")
+        
+        # Summary statistics
+        anova_results["summary"] = {
+            "total_tests_performed": len(anova_results["anova_tests"]),
+            "significant_results": sum(1 for test in anova_results["anova_tests"] if test["is_significant"]),
+            "non_significant_results": sum(1 for test in anova_results["anova_tests"] if not test["is_significant"])
+        }
+
+        # Save results
+        os.makedirs(os.path.dirname(args.anova_results), exist_ok=True)
+        
+        with open(args.anova_results, "w", encoding="utf-8") as f:
+            json.dump(anova_results, f, indent=2, ensure_ascii=False)
+
+        print("[SUCCESS] ANOVA analysis completed successfully:")
+        print(f"  - Total datasets analyzed: {len(downloaded_datasets)}")
+        print(f"  - Total ANOVA tests performed: {anova_results['summary']['total_tests_performed']}")
+        print(f"  - Significant results: {anova_results['summary']['significant_results']}")
+        print(f"  - Non-significant results: {anova_results['summary']['non_significant_results']}")
+        print(f"  - Results saved to: {args.anova_results}")
+        print(f"  - Downloaded data saved to: {args.downloaded_data}")
+
+    args:
+      - --schema_json
+      - {inputPath: schema_json}
+      - --bearer_token
+      - {inputPath: bearer_token}
+      - --cdn_url_field
+      - {inputValue: cdn_url_field}
+      - --significance_level
+      - {inputValue: significance_level}
+      - --anova_results
+      - {outputPath: anova_results}
+      - --downloaded_data
+      - {outputPath: downloaded_data}
