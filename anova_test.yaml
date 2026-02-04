@@ -1,4 +1,4 @@
-name: ANOVA Analysis from Schema CDN URLs v2
+name: ANOVA Analysis from Schema CDN URLs v3
 inputs:
   - {name: schema_json, type: String, description: "Path to schema JSON file containing CDN URLs"}
   - {name: bearer_token, type: string, description: "Path to file containing bearer token (if CDN URLs require auth)"}
@@ -239,9 +239,6 @@ implementation:
 
         print("[SUCCESS] ANOVA analysis completed successfully:")
         print(f"  - Total datasets analyzed: {len(downloaded_datasets)}")
-        print(f"  - Total ANOVA tests performed: {anova_results['summary']['total_tests_performed']}")
-        print(f"  - Significant results: {anova_results['summary']['significant_results']}")
-        print(f"  - Non-significant results: {anova_results['summary']['non_significant_results']}")
         print(f"  - Results saved to: {args.anova_results}")
         print(f"  - Downloaded data saved to: {args.downloaded_data}")
 
