@@ -1,4 +1,4 @@
-name: ANOVA Results CDN Uploader v1
+name: ANOVA Results CDN Uploader v1.1
 inputs:
   - {name: anova_results, type: String, description: "Path to ANOVA results JSON file to upload"}
   - {name: bearer_token, type: string, description: "Path to a file containing bearer token"}
@@ -154,8 +154,12 @@ implementation:
             relative_cdn_url = resp.get("cdnUrl")
             if not relative_cdn_url:
                 raise ValueError("Missing 'cdnUrl' in CDN response")
+            encoded_cdn_url = encode_special_chars(relative_cdn_url)
+            print(f"[INFO] Original cdnUrl:  {relative_cdn_url}")
+            print(f"[INFO] Encoded cdnUrl:   {encoded_cdn_url}")
             
-            final_url = f"{args.get_cdn.rstrip('/')}{relative_cdn_url}"
+            final_url = f"{args.get_cdn.rstrip('/')}{encoded_cdn_url}"
+            
             out_obj = build_output_dict(output_key, final_url)
             
             atomic_write_json(output_json_path, out_obj)
